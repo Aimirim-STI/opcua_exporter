@@ -38,9 +38,11 @@ var summaryInterval = flag.Duration("summary-interval", 5*time.Minute, "How freq
 
 // NodeConfig : Structure for representing OPCUA nodes to monitor.
 type NodeConfig struct {
-	NodeName   string      `yaml:"nodeName"`             // OPC UA node identifier
-	MetricName string      `yaml:"metricName"`           // Prometheus metric name to emit
-	ExtractBit interface{} `yaml:"extractBit,omitempty"` // Optional numeric value. If present and positive, extract just this bit and emit it as a boolean metric
+	NodeName     string            `yaml:"nodeName"`   // OPC UA node identifier
+	MetricName   string            `yaml:"metricName"` // Prometheus metric name to emit
+	MetricHelp   string            `yaml:"metricHelp"` // Prometheus metric help to emit
+	MetricLables map[string]string `yaml:"metricLables"`
+	ExtractBit   interface{}       `yaml:"extractBit,omitempty"` // Optional numeric value. If present and positive, extract just this bit and emit it as a boolean metric
 }
 
 // MsgHandler interface can convert OPC UA Variant objects
@@ -221,13 +223,15 @@ func createMetrics(nodeConfigs *[]NodeConfig) HandlerMap {
 
 func createHandler(nodeConfig NodeConfig) MsgHandler {
 	metricName := nodeConfig.MetricName
+	metricHelp := nodeConfig.MetricHelp
+	metricLables := nodeConfig.MetricLables
 	if *promPrefix != "" {
 		metricName = fmt.Sprintf("%s_%s", *promPrefix, metricName)
 	}
 	g := prometheus.NewGauge(prometheus.GaugeOpts{
-		// TODO: user-specified namespace from flags?
-		Name: metricName,
-		Help: "From OPC UA",
+		Name:        metricName,
+		Help:        metricHelp,
+		ConstLabels: metricLables,
 	})
 	prometheus.MustRegister(g)
 
