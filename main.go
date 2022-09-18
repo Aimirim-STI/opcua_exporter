@@ -36,6 +36,11 @@ var maxTimeouts = flag.Int("max-timeouts", 0, "The exporter will quit trying aft
 var bufferSize = flag.Int("buffer-size", 64, "Maximum number of messages in the receive buffer")
 var summaryInterval = flag.Duration("summary-interval", 5*time.Minute, "How frequently to print an event count summary")
 
+var securityMode = flag.String("security-mode", "None", "Available security modes: None,Sign")
+var securityPolicy = flag.String("security-policy", "None", "Available security policies: None,Basic256")
+var username = flag.String("username", "", "User authentication for a session with user.")
+var password = flag.String("password", "", "User authentication for a session with password.")
+
 // NodeConfig : Structure for representing OPCUA nodes to monitor.
 type NodeConfig struct {
 	NodeName     string            `yaml:"nodeName"`   // OPC UA node identifier
@@ -128,7 +133,34 @@ func main() {
 }
 
 func getClient(endpoint *string) *opcua.Client {
-	client := opcua.NewClient(*endpoint)
+	endpoints, err := opcua.GetEndpoints(*endpoint)
+	if err != nil {
+		return nil
+	}
+
+	ep := opcua.SelectEndpoint(endpoints, "None", ua.MessageSecurityModeFromString("None"))
+	if ep == nil {
+		return nil
+	}
+
+	opts := []opcua.Option{
+		opcua.SecurityModeString(*securityMode),
+		opcua.SecurityPolicy(*securityPolicy),
+	}
+
+	if *username == "" && *password == "" {
+		opts = append(opts,
+			opcua.AuthAnonymous(),
+			opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeAnonymous),
+		)
+	} else {
+		opts = append(opts,
+			opcua.AuthUsername(*username, *password),
+			opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeUserName),
+		)
+	}
+
+	client := opcua.NewClient(*endpoint, opts...)
 	return client
 }
 

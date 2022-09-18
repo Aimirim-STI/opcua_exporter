@@ -14,7 +14,11 @@
             },
             "args": [
                 "-config","D:/tools/config.yaml",
-                "-endpoint","opc.tcp://DESKTOP-8H4V8KM:21381/MatrikonOpcUaWrapper"
+                "-endpoint","opc.tcp://DESKTOP-8H4V8KM:21381/MatrikonOpcUaWrapper",
+                "-security-mode","None",
+                "-security-policy","None",
+                "-username","test",
+                "-password","test123"
             ]            
         }
     ]
