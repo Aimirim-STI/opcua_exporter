@@ -1,0 +1,8 @@
+- nodeName: ns=6;s=0:模拟器示例.函数.Ramp1
+  metricName: purifying_reactor_temp_celsius
+  metricHelp: 净化釜温度
+  metricLables :
+    section: 净化
+    process: 碱化除钙
+    device: T20111A
+    variable: 201TE_02A
