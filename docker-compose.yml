@@ -1,0 +1,19 @@
+version: '3.4'
+services:
+  collector:
+    image: opcuaexporter
+    # build:
+      # context: .
+      # dockerfile: ./Dockerfile
+    command: [
+        "-config","/config/config.yaml",
+        "-endpoint","opc.tcp://172.31.145.93:21381/MatrikonOpcUaWrapper",
+        "-security-mode","None",
+        "-security-policy","None",
+        "-username","test",
+        "-password","test123"
+      ]
+    volumes:
+      - ./config:/config
+    ports:
+      - "9686:9686"

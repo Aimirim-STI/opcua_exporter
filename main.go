@@ -68,6 +68,8 @@ var uptimeGauge prometheus.Gauge
 var messageCounter prometheus.Counter
 var eventSummaryCounter *EventSummaryCounter
 
+var registry = prometheus.NewRegistry()
+
 func init() {
 	subsystem := "opcua_exporter"
 	uptimeGauge = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -75,15 +77,15 @@ func init() {
 		Name:      "uptime_seconds",
 		Help:      "Time in seconds since the OPCUA exporter started",
 	})
-	uptimeGauge.Set(time.Now().Sub(startTime).Seconds())
-	prometheus.MustRegister(uptimeGauge)
+	uptimeGauge.Set(time.Since(startTime).Seconds())
+	registry.MustRegister(uptimeGauge)
 
 	messageCounter = prometheus.NewCounter(prometheus.CounterOpts{
 		Subsystem: subsystem,
 		Name:      "message_count",
 		Help:      "Total number of OPCUA channel updates received by the exporter",
 	})
-	prometheus.MustRegister(messageCounter)
+	registry.MustRegister(messageCounter)
 
 	eventSummaryCounter = NewEventSummaryCounter(*summaryInterval)
 }
@@ -126,7 +128,7 @@ func main() {
 	metricMap := createMetrics(&nodes)
 	go setupMonitor(ctx, client, metricMap, *bufferSize)
 
-	http.Handle("/metrics", promhttp.Handler())
+	http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{Registry: registry}))
 	var listenOn = fmt.Sprintf(":%d", *port)
 	log.Printf("Serving metrics on %s", listenOn)
 	log.Fatal(http.ListenAndServe(listenOn, nil))
@@ -187,7 +189,7 @@ func setupMonitor(ctx context.Context, client *opcua.Client, handlerMap HandlerM
 	lag := time.Millisecond * 10
 	timeoutCount := 0
 	for {
-		uptimeGauge.Set(time.Now().Sub(startTime).Seconds())
+		uptimeGauge.Set(time.Since(startTime).Seconds())
 		select {
 		case <-ctx.Done():
 			return
@@ -265,7 +267,7 @@ func createHandler(nodeConfig NodeConfig) MsgHandler {
 		Help:        metricHelp,
 		ConstLabels: metricLables,
 	})
-	prometheus.MustRegister(g)
+	registry.MustRegister(g)
 
 	var handler MsgHandler
 	if nodeConfig.ExtractBit != nil {
