@@ -1,4 +1,4 @@
-FROM golang:1.14.0 as golang_image
+FROM golang:latest as golang_image
 
 FROM golang_image as tester
 COPY . /build
