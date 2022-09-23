@@ -15,7 +15,7 @@ type OpcValueHandler struct {
 	gauge prometheus.Gauge
 }
 
-// Handle the message by deturmingint the float value
+// Handle the message by getting the float value
 // and emiting it as a gauge metric
 func (h OpcValueHandler) Handle(v ua.Variant) error {
 	floatVal, err := h.FloatValue(v)

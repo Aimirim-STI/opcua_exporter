@@ -5,6 +5,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // NewEventSummaryCounter creates a new event counter that will
@@ -21,22 +23,29 @@ func NewEventSummaryCounter(interval time.Duration) *EventSummaryCounter {
 // This is to reduce log volume while allowing some visibility into the shape of the OPC-UA event traffic
 // being received by the exporter
 type EventSummaryCounter struct {
-	Interval time.Duration
-	Counts   map[string]int
-	Total    int
-	mutex    sync.Mutex
+	Interval    time.Duration
+	Counts      map[string]int
+	Total       int
+	mutex       sync.Mutex
+	promCounter *prometheus.CounterVec
 }
 
-// Inc adds one to the counter for the given channel
-func (esc *EventSummaryCounter) Inc(channel string) {
+// Inc adds one to the counter for the given node
+func (esc *EventSummaryCounter) Inc(nodeID string) {
+	// Internal counter for logging
 	esc.mutex.Lock()
-	if _, ok := esc.Counts[channel]; ok {
-		esc.Counts[channel]++
+	if _, ok := esc.Counts[nodeID]; ok {
+		esc.Counts[nodeID]++
 	} else {
-		esc.Counts[channel] = 1
+		esc.Counts[nodeID] = 1
 	}
 	esc.Total++
 	esc.mutex.Unlock()
+
+	// Also update prometheus counter
+	if esc.promCounter != nil {
+		esc.promCounter.WithLabelValues(nodeID).Inc()
+	}
 }
 
 // Reset all the counters to zero
@@ -47,9 +56,23 @@ func (esc *EventSummaryCounter) Reset() {
 	esc.mutex.Unlock()
 }
 
+// set up the prometheus counter
+func (esc *EventSummaryCounter) initPrometheusCounter() {
+	esc.promCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: exporterNamespace,
+			Name:      "event_count",
+			Help:      "Number of updates received from the OPC-UA endpoint",
+		},
+		[]string{"nodeID"},
+	)
+	prometheus.MustRegister(esc.promCounter)
+}
+
 // Start the goroutine that periodically logs the counter summary,
 // then resets the counters.
 func (esc *EventSummaryCounter) Start(ctx context.Context) {
+	esc.initPrometheusCounter()
 	go func() {
 		log.Printf("Starting %v summary timer", esc.Interval.String())
 		esc.Reset()
