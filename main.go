@@ -26,7 +26,7 @@ import (
 const exporterNamespace = "opcua_exporter"
 
 var port = flag.Int("port", 9686, "Port to publish metrics on.")
-var endpoint = flag.String("endpoint", "opc.tcp://localhost:4096", "OPC UA Endpoint to connect to.")
+// var endpoint = flag.String("endpoint", "opc.tcp://localhost:4096", "OPC UA Endpoint to connect to.")
 var promPrefix = flag.String("prom-prefix", "", "Prefix will be appended to emitted prometheus metrics")
 var nodeListFile = flag.String("config", "", "Path to a file from which to read the list of OPC UA nodes to monitor")
 var configB64 = flag.String("config-b64", "", "Base64-encoded config JSON. Overrides -config")
@@ -48,6 +48,11 @@ type NodeConfig struct {
 	MetricHelp   string            `yaml:"metricHelp"` // Prometheus metric help to emit
 	MetricLables map[string]string `yaml:"metricLables"`
 	ExtractBit   interface{}       `yaml:"extractBit,omitempty"` // Optional numeric value. If present and positive, extract just this bit and emit it as a boolean metric
+}
+// GlobalConf : Structure representing the yaml file
+type GlobalConf struct {
+	EndPoint string `yaml:"endPoint"` // OPC UA Endpoint to connect to.
+	Nodes []NodeConfig `yaml:"nodes"` // List of OPCUA nodes
 }
 
 // MsgHandler interface can convert OPC UA Variant objects
@@ -101,13 +106,14 @@ func main() {
 	eventSummaryCounter.Start(ctx)
 
 	var nodes []NodeConfig
+	var endpoint string
 	var readError error
 	if *configB64 != "" {
 		log.Print("Using base64-encoded config")
-		nodes, readError = readConfigBase64(configB64)
+		nodes, endpoint, readError = readConfigBase64(configB64)
 	} else if *nodeListFile != "" {
 		log.Printf("Reading config from %s", *nodeListFile)
-		nodes, readError = readConfigFile(*nodeListFile)
+		nodes, endpoint, readError = readConfigFile(*nodeListFile)
 	} else {
 		log.Fatal("Requires -config or -config-b64")
 	}
@@ -116,8 +122,8 @@ func main() {
 		log.Fatalf("Error reading config JSON: %v", readError)
 	}
 
-	client := getClient(endpoint)
-	log.Printf("Connecting to OPCUA server at %s", *endpoint)
+	client := getClient(&endpoint)
+	log.Printf("Connecting to OPCUA server at %s", endpoint)
 	if err := client.Connect(ctx); err != nil {
 		log.Fatalf("Error connecting to OPC UA client: %v", err)
 	} else {
@@ -279,21 +285,21 @@ func createHandler(nodeConfig NodeConfig) MsgHandler {
 	return handler
 }
 
-func readConfigFile(path string) ([]NodeConfig, error) {
+func readConfigFile(path string) ([]NodeConfig, string, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	f, err := os.Open(absPath)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	return parseConfigYAML(f)
 }
 
-func readConfigBase64(encodedConfig *string) ([]NodeConfig, error) {
+func readConfigBase64(encodedConfig *string) ([]NodeConfig, string, error) {
 	config, decodeErr := base64.StdEncoding.DecodeString(*encodedConfig)
 	if decodeErr != nil {
 		log.Fatal(decodeErr)
@@ -301,14 +307,13 @@ func readConfigBase64(encodedConfig *string) ([]NodeConfig, error) {
 	return parseConfigYAML(bytes.NewReader(config))
 }
 
-func parseConfigYAML(config io.Reader) ([]NodeConfig, error) {
+func parseConfigYAML(config io.Reader) ([]NodeConfig, string, error) {
 	content, err := ioutil.ReadAll(config)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-
-	var nodes []NodeConfig
-	err = yaml.Unmarshal(content, &nodes)
-	log.Printf("Found %d nodes in config file.", len(nodes))
-	return nodes, err
+	var gconf GlobalConf
+	err = yaml.Unmarshal(content, &gconf)
+	log.Printf("Found %d nodes in config file.", len(gconf.Nodes))
+	return gconf.Nodes, gconf.EndPoint, err
 }
