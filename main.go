@@ -132,6 +132,8 @@ func main() {
 	defer client.Close()
 
 	metricMap := createMetrics(&nodes)
+
+	go firstRead(ctx, client, metricMap)
 	go setupMonitor(ctx, client, metricMap, *bufferSize)
 
 	http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{Registry: registry}))
@@ -170,6 +172,49 @@ func getClient(endpoint *string) *opcua.Client {
 
 	client := opcua.NewClient(*endpoint, opts...)
 	return client
+}
+
+func firstRead(ctx context.Context, client *opcua.Client, handlerMap HandlerMap){
+	
+	// Build lists of request nodes and node names
+	var nameList []string
+	var idList []*ua.ReadValueID
+	for nodeName ,_ := range handlerMap {
+		id, err := ua.ParseNodeID(nodeName)
+		if err != nil {
+			log.Fatalf("Invalid node id: %v", err)
+		}
+		nameList = append(nameList, nodeName)
+		idList = append(idList, &ua.ReadValueID{NodeID: id})
+	}
+	// Mount request object
+	req := &ua.ReadRequest{
+		MaxAge: 0,
+		NodesToRead: idList,
+		TimestampsToReturn: ua.TimestampsToReturnBoth,
+	}
+	// Read data
+	resp, err := client.Read(req)
+	if err != nil {
+		log.Fatalf("Read failed: %s", err)
+	}
+	// Loop in results
+	for i, val := range resp.Results {
+		key := nameList[i]
+		// Check if it is valid
+		if val.Status != ua.StatusOK {
+			log.Fatalf("Status not OK: %v", val.Status)
+		}
+		
+		// Open handler to write value to it
+		for _, handlerMapRec := range handlerMap[key] {
+			err := handlerMapRec.handler.Handle(*val.Value)
+			if err != nil {
+				log.Printf("Error handling opcua value: %s (%s)\n", err, handlerMapRec.config.MetricName)
+			}
+			log.Printf("Initial read of %s = %v", handlerMapRec.config.MetricName, val.Value.Value())
+		}
+	}
 }
 
 // Subscribe to all the nodes and update the appropriate prometheus metrics on change
