@@ -35,6 +35,7 @@ var readTimeout = flag.Duration("read-timeout", 5*time.Second, "Timeout when wai
 var maxTimeouts = flag.Int("max-timeouts", 0, "The exporter will quit trying after this many read timeouts (0 to disable).")
 var bufferSize = flag.Int("buffer-size", 64, "Maximum number of messages in the receive buffer")
 var summaryInterval = flag.Duration("summary-interval", 5*time.Minute, "How frequently to print an event count summary")
+var forcedReadInterval = flag.Duration("force-read", 0*time.Second, "How frequently to force a read from Server")
 
 var securityMode = flag.String("security-mode", "None", "Available security modes: None,Sign")
 var securityPolicy = flag.String("security-policy", "None", "Available security policies: None,Basic256")
@@ -133,7 +134,7 @@ func main() {
 
 	metricMap := createMetrics(&nodes)
 
-	go firstRead(ctx, client, metricMap)
+	go forcedRead(ctx, client, metricMap)
 	go setupMonitor(ctx, client, metricMap, *bufferSize)
 
 	http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{Registry: registry}))
@@ -174,7 +175,7 @@ func getClient(endpoint *string) *opcua.Client {
 	return client
 }
 
-func firstRead(ctx context.Context, client *opcua.Client, handlerMap HandlerMap){
+func forcedRead(ctx context.Context, client *opcua.Client, handlerMap HandlerMap){
 	
 	// Build lists of request nodes and node names
 	var nameList []string
@@ -212,7 +213,9 @@ func firstRead(ctx context.Context, client *opcua.Client, handlerMap HandlerMap)
 			if err != nil {
 				log.Printf("Error handling opcua value: %s (%s)\n", err, handlerMapRec.config.MetricName)
 			}
-			log.Printf("Initial read of %s = %v", handlerMapRec.config.MetricName, val.Value.Value())
+			if *debug {
+				log.Printf("Forced read of %s = %v", handlerMapRec.config.MetricName, val.Value.Value())
+			}
 		}
 	}
 }
@@ -239,6 +242,7 @@ func setupMonitor(ctx context.Context, client *opcua.Client, handlerMap HandlerM
 
 	lag := time.Millisecond * 10
 	timeoutCount := 0
+	var lastRead = time.Now()
 	for {
 		uptimeGauge.Set(time.Since(startTime).Seconds())
 		select {
@@ -266,6 +270,14 @@ func setupMonitor(ctx context.Context, client *opcua.Client, handlerMap HandlerM
 			log.Printf("Timeout %d wating for subscription messages", timeoutCount)
 			if *maxTimeouts > 0 && timeoutCount >= *maxTimeouts {
 				log.Fatalf("Max timeouts (%d) exceeded. Quitting.", *maxTimeouts)
+			}
+		}
+
+		timeDiff := time.Now().Sub(lastRead)
+		if *forcedReadInterval > lag {
+			if timeDiff > *forcedReadInterval {
+				lastRead = time.Now()
+				go forcedRead(ctx, client, handlerMap)
 			}
 		}
 	}
